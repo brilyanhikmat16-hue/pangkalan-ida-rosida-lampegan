@@ -1,0 +1,1806 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  TrendingUp, 
+  TrendingDown, 
+  Package, 
+  DollarSign, 
+  Plus, 
+  History, 
+  Settings, 
+  Home, 
+  ArrowUpRight, 
+  ArrowDownLeft, 
+  Search, 
+  Trash2, 
+  Edit2, 
+  X, 
+  Check, 
+  AlertTriangle, 
+  FileText, 
+  LogOut,
+  Info,
+  Calendar,
+  Layers,
+  User,
+  MapPin,
+  Save,
+  FileSpreadsheet
+} from 'lucide-react';
+
+
+const DEFAULT_SETTINGS = {
+  storeName: "Pangkalan IDA ROSIDA",
+  ownerName: "Ibu Ida Rosida",
+  address: "Jl. Raya Soreang No. 123, Bandung",
+  priceSatuan: 20000,
+  priceEceranDikirim: 21000,
+  priceEceranDiambil: 19600,
+  minStockAlert: 15,
+};
+
+const INITIAL_STOCKS = {
+  tabungIsi: 0,
+  tabungKosong: 0,
+  kapasitasMaksimal: 150
+};
+
+export default function App() {
+  // --- AUTH STATE ---
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    const saved = localStorage.getItem('ida_gas_auth');
+    return saved ? JSON.parse(saved) : false;
+  });
+  
+  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [loginError, setLoginError] = useState('');
+
+  // --- APP SYSTEM STATES ---
+  const [settings, setSettings] = useState(() => {
+    const saved = localStorage.getItem('ida_gas_settings');
+    return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
+  });
+
+  const [stocks, setStocks] = useState(() => {
+    const saved = localStorage.getItem('ida_gas_stocks');
+    return saved ? JSON.parse(saved) : INITIAL_STOCKS;
+  });
+
+  const [transactions, setTransactions] = useState(() => {
+    const saved = localStorage.getItem('ida_gas_transactions');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [finances, setFinances] = useState(() => {
+    const saved = localStorage.getItem('ida_gas_finances');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Notes state (Penyimpanan catatan penting pangkalan)
+  const [memos, setMemos] = useState(() => {
+    const saved = localStorage.getItem('ida_gas_memos');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // --- NAVIGATION STATE ---
+  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, transaksi, stok, keuangan, riwayat, pengaturan
+
+  // --- MODALS & FORM STATES ---
+  const [isTxModalOpen, setIsTxModalOpen] = useState(false);
+  const [isStockModalOpen, setIsStockModalOpen] = useState(false);
+  const [isFinanceModalOpen, setIsFinanceModalOpen] = useState(false);
+  
+  // Detail & Edit states
+  const [selectedTx, setSelectedTx] = useState(null);
+  const [isEditingTx, setIsEditingTx] = useState(false);
+  const [receiptTx, setReceiptTx] = useState(null);
+
+  // --- FORM INPUTS ---
+  // Transaksi Form State
+  const [txForm, setTxForm] = useState({
+    customerName: '',
+    type: 'Satuan',
+    pricePerUnit: DEFAULT_SETTINGS.priceSatuan,
+    qty: 1,
+    paymentMethod: 'Tunai',
+    customPayment: '',
+    notes: ''
+  });
+
+  // Tambah Stok Form State
+  const [stockForm, setStockForm] = useState({
+    type: 'IN_ISI', // IN_ISI atau IN_KOSONG
+    qty: 10,
+    supplier: 'SPBE Pertamina Hub Soreang',
+    notes: 'Pasokan awal pangkalan'
+  });
+
+  // Tambah Keuangan Lain Form State
+  const [financeForm, setFinanceForm] = useState({
+    type: 'EXPENSE', 
+    category: 'Biaya Operasional',
+    amount: '',
+    notes: ''
+  });
+
+  // Memo / Notes Form State
+  const [newMemo, setNewMemo] = useState('');
+
+  // Search & Filter States
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterDate, setFilterDate] = useState('');
+  const [financeFilterType, setFinanceFilterType] = useState('ALL');
+  
+  // Penyaringan Kas Berdasarkan Rentang Waktu (Hari, Minggu, Bulan)
+  const [financePeriodFilter, setFinancePeriodFilter] = useState('ALL'); // ALL, TODAY, WEEK, MONTH
+  const [showAllFinances, setShowAllFinances] = useState(false); // Toggle "Lihat Semua"
+
+  // Notification Toast State
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+
+  // Auto-sync LocalStorage
+  useEffect(() => {
+    localStorage.setItem('ida_gas_settings', JSON.stringify(settings));
+  }, [settings]);
+
+  useEffect(() => {
+    localStorage.setItem('ida_gas_stocks', JSON.stringify(stocks));
+  }, [stocks]);
+
+  useEffect(() => {
+    localStorage.setItem('ida_gas_transactions', JSON.stringify(transactions));
+  }, [transactions]);
+
+  useEffect(() => {
+    localStorage.setItem('ida_gas_finances', JSON.stringify(finances));
+  }, [finances]);
+
+  useEffect(() => {
+    localStorage.setItem('ida_gas_memos', JSON.stringify(memos));
+  }, [memos]);
+
+  // Toast helper
+  const showToast = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => {
+      setToast({ show: false, message: '', type: 'success' });
+    }, 3000);
+  };
+
+  // Update harga jual otomatis ketika tipe transaksi berubah
+  useEffect(() => {
+    let price = settings.priceSatuan;
+    if (txForm.type === 'Eceran dikirim') price = settings.priceEceranDikirim;
+    if (txForm.type === 'Eceran diambil') price = settings.priceEceranDiambil;
+    setTxForm(prev => ({ ...prev, pricePerUnit: price }));
+  }, [txForm.type, settings]);
+
+
+  // --- AUTH HANDLERS ---
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (loginForm.username.toLowerCase() === 'admin' && loginForm.password === '12345') {
+      setIsLoggedIn(true);
+      localStorage.setItem('ida_gas_auth', JSON.stringify(true));
+      showToast("Selamat datang kembali, Admin Ida Rosida!");
+      setLoginForm({ username: '', password: '' });
+      setLoginError('');
+    } else {
+      setLoginError('Username atau Password salah (Petunjuk: admin / 12345)');
+    }
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    localStorage.removeItem('ida_gas_auth');
+    showToast("Berhasil keluar dari sistem");
+  };
+
+  // --- LOGIC: TRANSAKSI GAS ---
+  const handleSaveTransaction = (e) => {
+    e.preventDefault();
+    
+    const qtyNum = parseInt(txForm.qty) || 0;
+    const priceNum = parseFloat(txForm.pricePerUnit) || 0;
+    const totalAmount = qtyNum * priceNum;
+
+    if (qtyNum <= 0) {
+      showToast("Jumlah tabung harus lebih dari 0", "error");
+      return;
+    }
+
+    // Cek kecukupan stok tabung isi
+    if (stocks.tabungIsi < qtyNum) {
+      showToast(`Stok tabung isi tidak mencukupi! Sisa stok Anda: ${stocks.tabungIsi}. Silakan tambah stok terlebih dahulu.`, "error");
+      return;
+    }
+
+    const txId = isEditingTx ? selectedTx.id : `TX-${Math.floor(1000 + Math.random() * 9000)}`;
+    const finalPaymentMethod = txForm.paymentMethod === 'Lainnya' ? txForm.customPayment || 'Lainnya' : txForm.paymentMethod;
+
+    if (isEditingTx) {
+      // --- LOGIC EDIT TRANSAKSI ---
+      const originalTx = selectedTx;
+      
+      const restoredTabungIsi = stocks.tabungIsi + originalTx.qty;
+      const restoredTabungKosong = Math.max(0, stocks.tabungKosong - originalTx.qty);
+
+      if (restoredTabungIsi < qtyNum) {
+        showToast(`Stok tabung isi tidak mencukupi untuk update ini!`, "error");
+        return;
+      }
+
+      const newTabungIsi = restoredTabungIsi - qtyNum;
+      const newTabungKosong = restoredTabungKosong + qtyNum;
+
+      setStocks(prev => ({
+        ...prev,
+        tabungIsi: newTabungIsi,
+        tabungKosong: newTabungKosong
+      }));
+
+      const updatedTxList = transactions.map(t => {
+        if (t.id === originalTx.id) {
+          return {
+            ...t,
+            customerName: txForm.customerName || 'Umum',
+            type: txForm.type,
+            qty: qtyNum,
+            pricePerUnit: priceNum,
+            total: totalAmount,
+            paymentMethod: finalPaymentMethod,
+            notes: txForm.notes
+          };
+        }
+        return t;
+      });
+      setTransactions(updatedTxList);
+
+      const updatedFinances = finances.map(f => {
+        if (f.notes === `Transaksi ${originalTx.id}`) {
+          return {
+            ...f,
+            amount: totalAmount,
+            notes: `Transaksi ${txId}`
+          };
+        }
+        return f;
+      });
+      setFinances(updatedFinances);
+
+      showToast("Transaksi berhasil diperbarui!");
+      setIsEditingTx(false);
+      setSelectedTx(null);
+    } else {
+      // --- LOGIC TRANSAKSI BARU ---
+      setStocks(prev => ({
+        ...prev,
+        tabungIsi: prev.tabungIsi - qtyNum,
+        tabungKosong: prev.tabungKosong + qtyNum
+      }));
+
+      const newTx = {
+        id: txId,
+        date: new Date().toISOString(),
+        customerName: txForm.customerName || 'Umum',
+        type: txForm.type,
+        qty: qtyNum,
+        pricePerUnit: priceNum,
+        total: totalAmount,
+        paymentMethod: finalPaymentMethod,
+        notes: txForm.notes,
+        flow: 'OUT'
+      };
+
+      setTransactions(prev => [newTx, ...prev]);
+
+      const newFinance = {
+        id: `FN-${Math.floor(1000 + Math.random() * 9000)}`,
+        date: new Date().toISOString(),
+        category: "Penjualan Gas LPG",
+        type: "INCOME",
+        amount: totalAmount,
+        notes: `Transaksi ${txId}`
+      };
+
+      setFinances(prev => [newFinance, ...prev]);
+      
+      setReceiptTx(newTx);
+      showToast("Transaksi Baru berhasil disimpan!");
+    }
+
+    setTxForm({
+      customerName: '',
+      type: 'Satuan',
+      pricePerUnit: settings.priceSatuan,
+      qty: 1,
+      paymentMethod: 'Tunai',
+      customPayment: '',
+      notes: ''
+    });
+    setIsTxModalOpen(false);
+  };
+
+  // --- LOGIC: HAPUS TRANSAKSI (SINKRON STOK & SALDO) ---
+  const handleDeleteTransaction = (txId) => {
+    const txToDelete = transactions.find(t => t.id === txId);
+    if (!txToDelete) return;
+
+    setStocks(prev => ({
+      ...prev,
+      tabungIsi: prev.tabungIsi + txToDelete.qty,
+      tabungKosong: Math.max(0, prev.tabungKosong - txToDelete.qty)
+    }));
+
+    setTransactions(prev => prev.filter(t => t.id !== txId));
+    setFinances(prev => prev.filter(f => f.notes !== `Transaksi ${txId}`));
+
+    showToast("Transaksi dihapus & Stok/Keuangan telah dikembalikan!", "info");
+    setSelectedTx(null);
+  };
+
+  // --- LOGIC: MANAJEMEN STOK ---
+  const handleSaveStock = (e) => {
+    e.preventDefault();
+    const qtyNum = parseInt(stockForm.qty) || 0;
+    if (qtyNum <= 0) {
+      showToast("Jumlah stok harus valid", "error");
+      return;
+    }
+
+    if (stockForm.type === 'IN_ISI') {
+      setStocks(prev => ({
+        ...prev,
+        tabungIsi: prev.tabungIsi + qtyNum
+      }));
+      showToast(`Stok tabung isi bertambah +${qtyNum} tabung.`);
+    } else {
+      setStocks(prev => ({
+        ...prev,
+        tabungKosong: prev.tabungKosong + qtyNum
+      }));
+      showToast(`Stok tabung kosong bertambah +${qtyNum} tabung.`);
+    }
+
+    setIsStockModalOpen(false);
+  };
+
+  // --- LOGIC: KEUANGAN MANDIRI ---
+  const handleSaveFinance = (e) => {
+    e.preventDefault();
+    const amountNum = parseFloat(financeForm.amount) || 0;
+    if (amountNum <= 0) {
+      showToast("Nominal kas harus lebih dari 0", "error");
+      return;
+    }
+
+    const newFinanceItem = {
+      id: `FN-${Math.floor(1000 + Math.random() * 9000)}`,
+      date: new Date().toISOString(),
+      category: financeForm.category,
+      type: financeForm.type,
+      amount: amountNum,
+      notes: financeForm.notes || 'Tanpa keterangan tambahan'
+    };
+
+    setFinances(prev => [newFinanceItem, ...prev]);
+    showToast(`Berhasil mencatat kas ${financeForm.type === 'INCOME' ? 'Masuk' : 'Keluar'}!`);
+    
+    setFinanceForm({
+      type: 'EXPENSE',
+      category: 'Biaya Operasional',
+      amount: '',
+      notes: ''
+    });
+    setIsFinanceModalOpen(false);
+  };
+
+  // --- LOGIC: MEMO / NOTES ---
+  const handleSaveMemo = (e) => {
+    e.preventDefault();
+    if (!newMemo.trim()) return;
+
+    const memoItem = {
+      id: `MEMO-${Date.now()}`,
+      date: new Date().toISOString(),
+      text: newMemo.trim()
+    };
+
+    setMemos(prev => [memoItem, ...prev]);
+    setNewMemo('');
+    showToast("Catatan berhasil disimpan!");
+  };
+
+  const handleDeleteMemo = (id) => {
+    setMemos(prev => prev.filter(m => m.id !== id));
+    showToast("Catatan dihapus", "info");
+  };
+
+  // --- LOGIC EDIT PENGATURAN ---
+  const handleSaveSettings = (e) => {
+    e.preventDefault();
+    showToast("Pengaturan pangkalan berhasil diperbarui!");
+  };
+
+  // --- FILTER RENTANG WAKTU KEUANGAN ---
+  const getFilteredByPeriod = (items) => {
+    const now = new Date();
+    return items.filter(item => {
+      const itemDate = new Date(item.date);
+      if (financePeriodFilter === 'TODAY') {
+        const startOfToday = new Date();
+        startOfToday.setHours(0,0,0,0);
+        return itemDate >= startOfToday;
+      }
+      if (financePeriodFilter === 'WEEK') {
+        const startOfWeek = new Date();
+        startOfWeek.setDate(now.getDate() - 7);
+        return itemDate >= startOfWeek;
+      }
+      if (financePeriodFilter === 'MONTH') {
+        const startOfMonth = new Date();
+        startOfMonth.setDate(now.getDate() - 30);
+        return itemDate >= startOfMonth;
+      }
+      return true; // ALL
+    });
+  };
+
+  // --- DERIVED METRICS FOR REALTIME DASHBOARD ---
+  const todayStart = new Date();
+  todayStart.setHours(0,0,0,0);
+
+  const filterTodayItems = (items) => {
+    return items.filter(item => {
+      const itemDate = new Date(item.date);
+      return itemDate >= todayStart;
+    });
+  };
+
+  const todayTransactions = filterTodayItems(transactions);
+  const todayFinances = filterTodayItems(finances);
+
+  const todayIncome = todayFinances
+    .filter(f => f.type === 'INCOME')
+    .reduce((sum, f) => sum + f.amount, 0);
+
+  const todayExpense = todayFinances
+    .filter(f => f.type === 'EXPENSE')
+    .reduce((sum, f) => sum + f.amount, 0);
+
+  const totalAllTimeIncome = finances
+    .filter(f => f.type === 'INCOME')
+    .reduce((sum, f) => sum + f.amount, 0);
+
+  const totalAllTimeExpense = finances
+    .filter(f => f.type === 'EXPENSE')
+    .reduce((sum, f) => sum + f.amount, 0);
+
+  const currentSaldo = totalAllTimeIncome - totalAllTimeExpense;
+
+  // Filtered lists based on search, category filters, and period filters
+  const filteredTransactions = transactions.filter(t => {
+    const matchesSearch = t.customerName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          t.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          t.type.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesDate = filterDate ? t.date.startsWith(filterDate) : true;
+    return matchesSearch && matchesDate;
+  });
+
+  const rawFilteredFinances = finances.filter(f => {
+    const matchesType = financeFilterType === 'ALL' ? true : f.type === financeFilterType;
+    const matchesDate = filterDate ? f.date.startsWith(filterDate) : true;
+    return matchesType && matchesDate;
+  });
+
+  const filteredFinances = getFilteredByPeriod(rawFilteredFinances);
+
+  // Trigger modal edit transaksi
+  const openEditTxModal = (tx) => {
+    setSelectedTx(tx);
+    setTxForm({
+      customerName: tx.customerName,
+      type: tx.type,
+      pricePerUnit: tx.pricePerUnit,
+      qty: tx.qty,
+      paymentMethod: ['Tunai', 'Transfer'].includes(tx.paymentMethod) ? tx.paymentMethod : 'Lainnya',
+      customPayment: ['Tunai', 'Transfer'].includes(tx.paymentMethod) ? '' : tx.paymentMethod,
+      notes: tx.notes
+    });
+    setIsEditingTx(true);
+    setActiveTab('transaksi');
+  };
+
+  // Helper format uang Rupiah
+  const formatRupiah = (num) => {
+    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(num);
+  };
+
+  // Helper format tanggal bersahabat
+  const formatDateFriendly = (isoString) => {
+    const d = new Date(isoString);
+    return d.toLocaleDateString('id-ID', { 
+      day: 'numeric', 
+      month: 'short', 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  };
+
+
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center px-6 py-12">
+        <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-emerald-100 overflow-hidden">
+          <div className="bg-gradient-to-br from-emerald-600 to-teal-700 px-6 py-10 text-center text-white relative">
+            <div className="absolute top-4 right-4 bg-white/20 px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-sm">
+              Mobile Kasir v2.0
+            </div>
+            
+            <div className="w-20 h-20 bg-white rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-lg transform rotate-3 hover:rotate-0 transition-transform">
+              <svg className="w-12 h-12 text-emerald-600" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+              </svg>
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight">Pangkalan IDA ROSIDA</h1>
+            <p className="text-emerald-100 text-sm mt-1">Sistem Pintar Kasir & Stok Gas Elpiji</p>
+          </div>
+
+          <div className="p-8">
+            <form onSubmit={handleLogin} className="space-y-5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Username Admin</label>
+                <input 
+                  type="text" 
+                  value={loginForm.username}
+                  onChange={(e) => setLoginForm({...loginForm, username: e.target.value})}
+                  className="w-full px-4 py-3.5 rounded-2xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 transition-all font-medium text-base"
+                  placeholder="Masukkan username..."
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Password Pintasan</label>
+                <input 
+                  type="password" 
+                  value={loginForm.password}
+                  onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
+                  className="w-full px-4 py-3.5 rounded-2xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 transition-all font-medium tracking-widest text-base"
+                  placeholder="•••••"
+                  required
+                />
+              </div>
+
+              {loginError && (
+                <div className="bg-red-50 text-red-600 text-xs p-3.5 rounded-xl border border-red-100 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span className="font-medium">{loginError}</span>
+                </div>
+              )}
+
+              <button 
+                type="submit" 
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-4 px-6 rounded-2xl shadow-lg shadow-emerald-600/20 active:scale-98 transition-all text-base mt-2"
+              >
+                Masuk ke Aplikasi
+              </button>
+            </form>
+
+            <div className="mt-8 text-center border-t border-slate-100 pt-6">
+              <div className="text-xs text-slate-400">
+                Lupa sandi? Gunakan akun default:<br/>
+                <span className="font-semibold text-slate-500">username: admin | password: 12345</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-800 pb-28 font-sans max-w-md mx-auto shadow-2xl relative flex flex-col">
+      {/* HEADER UTAMA */}
+      <header className="sticky top-0 z-40 bg-white border-b border-slate-100 shadow-sm px-4 py-3 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 font-bold shadow-inner">
+            IR
+          </div>
+          <div>
+            <h2 className="font-bold text-slate-800 text-sm leading-tight uppercase tracking-tight">{settings.storeName}</h2>
+            <div className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium">
+              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+              Admin: {settings.ownerName}
+            </div>
+          </div>
+        </div>
+
+        <button 
+          onClick={handleLogout}
+          className="p-2 text-slate-400 hover:text-red-500 active:bg-slate-50 rounded-xl transition-colors"
+          title="Keluar"
+        >
+          <LogOut className="w-5 h-5" />
+        </button>
+      </header>
+
+      {/* STICKY TOAST NOTIFIKASI */}
+      {toast.show && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 w-full max-w-xs px-4 animate-bounce">
+          <div className={`p-4 rounded-2xl shadow-xl border flex items-center gap-3 text-sm font-semibold text-white ${
+            toast.type === 'success' ? 'bg-emerald-600 border-emerald-500' : 'bg-red-600 border-red-500'
+          }`}>
+            {toast.type === 'success' ? <Check className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
+            <p>{toast.message}</p>
+          </div>
+        </div>
+      )}
+
+      {/* AREA UTAMA / KONTEN BERDASARKAN NAVIGASI */}
+      <main className="flex-1 p-4 space-y-4">
+        
+        {/* ================= PAGE: DASHBOARD ================= */}
+        {activeTab === 'dashboard' && (
+          <div className="space-y-4">
+            {/* SALDO UTAMA CARD */}
+            <div className="bg-gradient-to-br from-emerald-600 to-teal-700 text-white rounded-3xl p-5 shadow-lg shadow-emerald-900/10 relative overflow-hidden">
+              <div className="absolute right-0 bottom-0 translate-x-4 translate-y-4 opacity-10">
+                <Package className="w-40 h-40" />
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-emerald-100 font-medium tracking-wide uppercase">Estimasi Kas Pangkalan (Lokal)</span>
+                <span className="px-2.5 py-0.5 bg-white/20 text-[10px] rounded-full font-bold uppercase tracking-wider backdrop-blur-sm">
+                  Aktif
+                </span>
+              </div>
+              <h1 className="text-3xl font-extrabold tracking-tight mt-1.5">{formatRupiah(currentSaldo)}</h1>
+              
+              <div className="grid grid-cols-2 gap-4 mt-5 pt-4 border-t border-white/10 text-xs">
+                <div>
+                  <span className="text-emerald-200 block">Total Pemasukan</span>
+                  <span className="font-bold text-white text-sm mt-0.5 flex items-center gap-1">
+                    <ArrowUpRight className="w-4 h-4 text-emerald-300" />
+                    {formatRupiah(totalAllTimeIncome)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-emerald-200 block">Total Pengeluaran</span>
+                  <span className="font-bold text-white text-sm mt-0.5 flex items-center gap-1">
+                    <ArrowDownLeft className="w-4 h-4 text-red-300" />
+                    {formatRupiah(totalAllTimeExpense)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* ALERT STOK JIKA KRITIS */}
+            {stocks.tabungIsi <= settings.minStockAlert && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5 animate-pulse" />
+                <div>
+                  <h4 className="text-amber-800 font-bold text-xs uppercase tracking-wide">Peringatan: Stok Gas Kritis!</h4>
+                  <p className="text-amber-700 text-xs mt-0.5">Sisa tabung gas isi hanya tinggal <strong className="text-amber-900 font-extrabold text-sm">{stocks.tabungIsi} pcs</strong>. Segera hubungi agen/pemasok!</p>
+                </div>
+              </div>
+            )}
+
+            {/* REALTIME STOK SUMMARY CARD */}
+            <div className="bg-white rounded-3xl p-4 border border-slate-100 shadow-sm space-y-4">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center">
+                    <Package className="w-4 h-4 text-emerald-600" />
+                  </div>
+                  <h3 className="font-bold text-slate-800 text-sm">Status Real-time Gudang</h3>
+                </div>
+                <button 
+                  onClick={() => setActiveTab('stok')} 
+                  className="text-emerald-600 text-xs font-bold hover:underline"
+                >
+                  Kelola Stok
+                </button>
+              </div>
+
+              {/* Progress Bar Kapasitas */}
+              <div>
+                <div className="flex justify-between text-xs font-semibold text-slate-500 mb-1.5">
+                  <span>Isi Gudang ({stocks.tabungIsi + stocks.tabungKosong} / {stocks.kapasitasMaksimal} Tabung)</span>
+                  <span>{Math.round(((stocks.tabungIsi + stocks.tabungKosong) / stocks.kapasitasMaksimal) * 100)}%</span>
+                </div>
+                <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden flex">
+                  <div 
+                    style={{ width: `${(stocks.tabungIsi / stocks.kapasitasMaksimal) * 100}%` }} 
+                    className="bg-emerald-500 h-full transition-all duration-500"
+                    title="Tabung Isi"
+                  ></div>
+                  <div 
+                    style={{ width: `${(stocks.tabungKosong / stocks.kapasitasMaksimal) * 100}%` }} 
+                    className="bg-amber-500 h-full transition-all duration-500"
+                    title="Tabung Kosong"
+                  ></div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-emerald-50/50 rounded-2xl p-3 border border-emerald-50/80 flex items-center gap-3">
+                  <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+                    {stocks.tabungIsi}
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block uppercase font-bold tracking-wider">Gas Isi Ready</span>
+                    <span className="text-xs font-extrabold text-emerald-800">Tabung Hijau 3Kg</span>
+                  </div>
+                </div>
+
+                <div className="bg-amber-50/50 rounded-2xl p-3 border border-amber-50/80 flex items-center gap-3">
+                  <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+                    {stocks.tabungKosong}
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block uppercase font-bold tracking-wider">Tabung Kosong</span>
+                    <span className="text-xs font-extrabold text-amber-800">Siap Ditukar</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* METRICS TRANSAKSI HARI INI */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-white rounded-2xl p-3.5 text-center border border-slate-100 shadow-sm">
+                <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Hari Ini (Tx)</span>
+                <span className="text-xl font-extrabold text-slate-800 block mt-1">{todayTransactions.length}</span>
+                <span className="text-[9px] text-emerald-600 font-semibold mt-0.5 block">Penjualan Gas</span>
+              </div>
+              <div className="bg-white rounded-2xl p-3.5 text-center border border-slate-100 shadow-sm">
+                <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Masuk (Hari Ini)</span>
+                <span className="text-xs font-bold text-emerald-600 block mt-1 truncate">{formatRupiah(todayIncome)}</span>
+                <span className="text-[9px] text-slate-400 mt-0.5 block">Kas Masuk</span>
+              </div>
+              <div className="bg-white rounded-2xl p-3.5 text-center border border-slate-100 shadow-sm">
+                <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Keluar (Hari Ini)</span>
+                <span className="text-xs font-bold text-red-500 block mt-1 truncate">{formatRupiah(todayExpense)}</span>
+                <span className="text-[9px] text-slate-400 mt-0.5 block">Biaya & Belanja</span>
+              </div>
+            </div>
+
+            {/* QUICK ACTIONS BUTTONS */}
+            <div className="bg-white rounded-3xl p-4 border border-slate-100 shadow-sm">
+              <h3 className="font-bold text-slate-800 text-sm mb-3">Aksi Cepat Menu</h3>
+              <div className="grid grid-cols-4 gap-2.5">
+                {/* AKTIF: Tombol ini sekarang berfungsi mengarah ke form kasir jual */}
+                <button 
+                  onClick={() => {
+                    setIsEditingTx(false);
+                    setTxForm({
+                      customerName: '',
+                      type: 'Satuan',
+                      pricePerUnit: settings.priceSatuan,
+                      qty: 1,
+                      paymentMethod: 'Tunai',
+                      customPayment: '',
+                      notes: ''
+                    });
+                    setActiveTab('transaksi');
+                  }}
+                  className="flex flex-col items-center justify-center p-3 rounded-2xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors active:scale-95"
+                >
+                  <Plus className="w-5 h-5 mb-1" />
+                  <span className="text-[10px] font-bold leading-tight">Kasir Jual</span>
+                </button>
+
+                <button 
+                  onClick={() => setIsStockModalOpen(true)}
+                  className="flex flex-col items-center justify-center p-3 rounded-2xl bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors active:scale-95"
+                >
+                  <Package className="w-5 h-5 mb-1" />
+                  <span className="text-[10px] font-bold leading-tight">Stok Masuk</span>
+                </button>
+
+                <button 
+                  onClick={() => setIsFinanceModalOpen(true)}
+                  className="flex flex-col items-center justify-center p-3 rounded-2xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors active:scale-95"
+                >
+                  <DollarSign className="w-5 h-5 mb-1" />
+                  <span className="text-[10px] font-bold leading-tight">Tambah Kas</span>
+                </button>
+
+                <button 
+                  onClick={() => setActiveTab('riwayat')}
+                  className="flex flex-col items-center justify-center p-3 rounded-2xl bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors active:scale-95"
+                >
+                  <History className="w-5 h-5 mb-1" />
+                  <span className="text-[10px] font-bold leading-tight">Cari Nota</span>
+                </button>
+              </div>
+            </div>
+
+            {/* ================= NOTES / CATATAN PENTING SECTION ================= */}
+            <div className="bg-white rounded-3xl p-4 border border-slate-100 shadow-sm space-y-3">
+              <div className="flex justify-between items-center">
+                <h3 className="font-bold text-slate-800 text-sm">Catatan Penting Pangkalan</h3>
+                <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-bold">
+                  {memos.length} Memo
+                </span>
+              </div>
+
+              {/* Form Input Catatan Baru */}
+              <form onSubmit={handleSaveMemo} className="flex gap-2">
+                <input 
+                  type="text"
+                  value={newMemo}
+                  onChange={(e) => setNewMemo(e.target.value)}
+                  placeholder="Tulis pengingat, tagihan, atau info penting..."
+                  className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+                <button
+                  type="submit"
+                  className="px-4 py-2.5 bg-emerald-600 text-white font-bold rounded-xl text-xs hover:bg-emerald-700 active:scale-95 transition-transform"
+                >
+                  Simpan
+                </button>
+              </form>
+
+              {/* List Memo Catatan */}
+              <div className="space-y-2 max-h-48 overflow-y-auto pt-1">
+                {memos.map((memo) => (
+                  <div key={memo.id} className="p-3 bg-amber-50/50 rounded-xl border border-amber-100 flex justify-between items-start text-xs">
+                    <div className="space-y-1 pr-2 flex-1">
+                      <p className="text-slate-700 font-medium leading-relaxed">{memo.text}</p>
+                      <span className="text-[9px] text-slate-400 block">{formatDateFriendly(memo.date)}</span>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteMemo(memo.id)}
+                      className="p-1 text-slate-400 hover:text-red-500 active:scale-90"
+                      title="Hapus Catatan"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+
+                {memos.length === 0 && (
+                  <p className="text-center py-4 text-xs text-slate-400 italic">Belum ada catatan penting harian.</p>
+                )}
+              </div>
+            </div>
+
+            {/* MINI GRAFIK VISUALISASI KAS */}
+            <div className="bg-white rounded-3xl p-4 border border-slate-100 shadow-sm space-y-3">
+              <h3 className="font-bold text-slate-800 text-sm">Visualisasi Arus Kas (Terakhir)</h3>
+              <div className="h-16 flex items-end gap-2 px-2 pt-2">
+                {finances.slice(0, 8).reverse().map((f, i) => (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative">
+                    <div 
+                      style={{ height: `${Math.min(48, Math.max(12, (f.amount / 300000) * 40))}px` }} 
+                      className={`w-full rounded-t-md transition-all duration-500 ${f.type === 'INCOME' ? 'bg-emerald-500' : 'bg-red-400'}`}
+                    ></div>
+                    <span className="text-[8px] text-slate-400 font-medium truncate max-w-[40px]">
+                      {f.notes.includes("Transaksi") ? f.notes.split(" ")[1] : "KAS"}
+                    </span>
+                    <div className="absolute bottom-8 bg-slate-800 text-white text-[9px] px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
+                      {formatRupiah(f.amount)}
+                    </div>
+                  </div>
+                ))}
+                {finances.length === 0 && (
+                  <div className="w-full text-center py-4 text-xs text-slate-400 italic">Belum ada data keuangan</div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= PAGE: TRANSAKSI GAS / KASIR ================= */}
+        {activeTab === 'transaksi' && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-3xl p-5 border border-emerald-100 shadow-md">
+              <div className="flex items-center gap-2.5 mb-4 border-b border-slate-100 pb-3">
+                <div className="w-10 h-10 bg-emerald-500 text-white rounded-xl flex items-center justify-center">
+                  <Plus className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800 text-base">Input Transaksi Kasir</h3>
+                  <p className="text-xs text-slate-500">Stok Gas Ready: {stocks.tabungIsi} Pcs</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleSaveTransaction} className="space-y-4">
+                {/* PILIH TIPE TRANSAKSI */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Tipe Jual / Pembeli</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {['Satuan', 'Eceran dikirim', 'Eceran diambil'].map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setTxForm({...txForm, type})}
+                        className={`py-3 px-2 rounded-xl text-xs font-bold border transition-all ${
+                          txForm.type === type 
+                            ? 'bg-emerald-600 border-emerald-600 text-white shadow-md shadow-emerald-600/10' 
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        {type}
+                        <span className="block text-[10px] font-normal opacity-85 mt-0.5">
+                          {type === 'Satuan' && formatRupiah(settings.priceSatuan)}
+                          {type === 'Eceran dikirim' && formatRupiah(settings.priceEceranDikirim)}
+                          {type === 'Eceran diambil' && formatRupiah(settings.priceEceranDiambil)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* PILIH QUANTITY (TABUNG YANG DIBELI) */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Jumlah Tabung Gas (3Kg)</label>
+                  <div className="flex items-center gap-4 bg-slate-50 border border-slate-200 p-2 rounded-2xl">
+                    <button
+                      type="button"
+                      onClick={() => setTxForm({...txForm, qty: Math.max(1, txForm.qty - 1)})}
+                      className="w-12 h-12 bg-white border border-slate-200 rounded-xl flex items-center justify-center font-bold text-lg text-slate-700 active:scale-90 transition-transform shadow-sm"
+                    >
+                      -
+                    </button>
+                    <input 
+                      type="number"
+                      value={txForm.qty}
+                      onChange={(e) => setTxForm({...txForm, qty: Math.max(1, parseInt(e.target.value) || 1)})}
+                      className="flex-1 bg-transparent border-none text-center font-black text-xl text-slate-800 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setTxForm({...txForm, qty: txForm.qty + 1})}
+                      className="w-12 h-12 bg-white border border-slate-200 rounded-xl flex items-center justify-center font-bold text-lg text-slate-700 active:scale-90 transition-transform shadow-sm"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                {/* HARGA PER-UNIT (BISA DIUBAH MANUAL) */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Harga Per-Tabung (IDR)</label>
+                  <input 
+                    type="number"
+                    value={txForm.pricePerUnit}
+                    onChange={(e) => setTxForm({...txForm, pricePerUnit: parseFloat(e.target.value) || 0})}
+                    className="w-full px-4 py-3.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-slate-800 text-base"
+                    placeholder="Harga Satuan..."
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">*Harga otomatis disesuaikan, tapi bisa Anda ubah manual jika ada tawar-menawar.</p>
+                </div>
+
+                {/* NAMA PELANGGAN */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Nama Pelanggan / Warung</label>
+                  <input 
+                    type="text"
+                    value={txForm.customerName}
+                    onChange={(e) => setTxForm({...txForm, customerName: e.target.value})}
+                    className="w-full px-4 py-3.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-medium"
+                    placeholder="Contoh: Toko Berkah / Umum"
+                  />
+                </div>
+
+                {/* METODE PEMBAYARAN */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Metode Pembayaran</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {['Tunai', 'Transfer', 'Lainnya'].map((method) => (
+                      <button
+                        key={method}
+                        type="button"
+                        onClick={() => setTxForm({...txForm, paymentMethod: method})}
+                        className={`py-3 px-2 rounded-xl text-xs font-bold border transition-all ${
+                          txForm.paymentMethod === method 
+                            ? 'bg-emerald-600 border-emerald-600 text-white shadow-md' 
+                            : 'bg-slate-50 border-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {method}
+                      </button>
+                    ))}
+                  </div>
+
+                  {txForm.paymentMethod === 'Lainnya' && (
+                    <input 
+                      type="text"
+                      value={txForm.customPayment}
+                      onChange={(e) => setTxForm({...txForm, customPayment: e.target.value})}
+                      className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 mt-2 text-xs focus:ring-emerald-500 focus:ring-2 focus:outline-none"
+                      placeholder="Masukkan nama pembayaran (misal: Bon/Utang)"
+                    />
+                  )}
+                </div>
+
+                {/* KETERANGAN / NOTES TRANSAKSI */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Notes Transaksi / Catatan Nota (Opsional)</label>
+                  <textarea 
+                    value={txForm.notes}
+                    onChange={(e) => setTxForm({...txForm, notes: e.target.value})}
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs"
+                    placeholder="Tulis info penting transaksi ini..."
+                    rows="2"
+                  ></textarea>
+                </div>
+
+                {/* RINGKASAN HARGA TOTAL */}
+                <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex justify-between items-center">
+                  <div>
+                    <span className="text-[10px] text-emerald-800 uppercase font-bold block">Total Bayar</span>
+                    <span className="text-2xl font-black text-emerald-700">
+                      {formatRupiah(txForm.qty * txForm.pricePerUnit)}
+                    </span>
+                  </div>
+                  <div className="text-right text-[11px] text-emerald-800 font-medium">
+                    {txForm.qty} Tabung × {formatRupiah(txForm.pricePerUnit)}
+                  </div>
+                </div>
+
+                {/* TOMBOL SIMPAN UTAMA */}
+                <button
+                  type="submit"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-emerald-600/20 active:scale-95 transition-transform text-center flex items-center justify-center gap-2 text-base"
+                >
+                  <Save className="w-5 h-5" />
+                  {isEditingTx ? 'Perbarui Transaksi' : 'Simpan & Cetak Struk'}
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ================= PAGE: KELOLA STOK ================= */}
+        {activeTab === 'stok' && (
+          <div className="space-y-4">
+            {/* CARD STATISTIK STOK */}
+            <div className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm space-y-4">
+              <h3 className="font-extrabold text-slate-800 text-base">Ringkasan & Atur Gudang</h3>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
+                  <span className="text-xs text-emerald-800 font-semibold block">Total Gas Ready (Isi)</span>
+                  <span className="text-4xl font-black text-emerald-600 block mt-1">{stocks.tabungIsi}</span>
+                  <p className="text-[10px] text-slate-500 mt-2">Bisa langsung dijual ke konsumen</p>
+                </div>
+
+                <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100">
+                  <span className="text-xs text-amber-800 font-semibold block">Tabung Kosong di Toko</span>
+                  <span className="text-4xl font-black text-amber-600 block mt-1">{stocks.tabungKosong}</span>
+                  <p className="text-[10px] text-slate-500 mt-2">Menunggu tukar pasokan baru</p>
+                </div>
+              </div>
+
+              {/* Batas Minimum Alert Stock */}
+              <div className="bg-slate-50 rounded-2xl p-4 flex justify-between items-center border border-slate-100">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-700">Batas Alert Minim Stok</h4>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Sistem akan memberi peringatan jika stok kurang dari ini</p>
+                </div>
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-sm">
+                  <span className="text-sm font-bold text-slate-800">{settings.minStockAlert}</span>
+                  <span className="text-[10px] text-slate-400">Pcs</span>
+                </div>
+              </div>
+
+              {/* TOMBOL PICU RESTOCK */}
+              <button
+                onClick={() => setIsStockModalOpen(true)}
+                className="w-full bg-emerald-600 text-white font-bold py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-emerald-700 active:scale-95 transition-all shadow-md shadow-emerald-600/10 text-sm"
+              >
+                <Plus className="w-4 h-4" />
+                Catat Tambahan Stok Baru (SPBE)
+              </button>
+            </div>
+
+            {/* RIWAYAT PENYESUAIAN STOK */}
+            <div className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm space-y-3">
+              <h4 className="font-bold text-slate-800 text-sm">Visual Alur Masuk Gas</h4>
+              <div className="space-y-3">
+                {transactions.slice(0, 5).map((t, idx) => (
+                  <div key={idx} className="flex justify-between items-center text-xs p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-1.5 bg-red-100 text-red-600 rounded-lg">
+                        <ArrowUpRight className="w-4 h-4 rotate-90" />
+                      </div>
+                      <div>
+                        <strong className="text-slate-800 block text-[11px]">{t.customerName}</strong>
+                        <span className="text-[9px] text-slate-400">{formatDateFriendly(t.date)}</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-bold text-red-600 text-[11px] block">-{t.qty} Gas Isi</span>
+                      <span className="font-bold text-emerald-600 text-[9px]">+{t.qty} Tabung Kosong</span>
+                    </div>
+                  </div>
+                ))}
+                
+                {transactions.length === 0 && (
+                  <div className="text-center py-6 text-xs text-slate-400 italic">Belum ada riwayat pergerakan stok</div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= PAGE: KEUANGAN KAS ================= */}
+        {activeTab === 'keuangan' && (
+          <div className="space-y-4">
+            {/* CARD RINGKASAN SALDO & AKSI */}
+            <div className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm space-y-4">
+              <div className="flex justify-between items-center">
+                <div>
+                  <span className="text-xs text-slate-400 font-semibold block">SALDO AKTIF PANGKALAN</span>
+                  <span className="text-3xl font-black text-emerald-600 mt-1 block">{formatRupiah(currentSaldo)}</span>
+                </div>
+                <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 shadow-inner">
+                  <DollarSign className="w-6 h-6" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-100">
+                <button
+                  onClick={() => {
+                    setFinanceForm({ type: 'INCOME', category: 'Pemasukan Gas', amount: '', notes: '' });
+                    setIsFinanceModalOpen(true);
+                  }}
+                  className="bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition-colors p-3.5 rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5"
+                >
+                  <ArrowUpRight className="w-4 h-4" />
+                  Pemasukan Lain
+                </button>
+                <button
+                  onClick={() => {
+                    setFinanceForm({ type: 'EXPENSE', category: 'Biaya Operasional', amount: '', notes: '' });
+                    setIsFinanceModalOpen(true);
+                  }}
+                  className="bg-red-50 text-red-800 hover:bg-red-100 transition-colors p-3.5 rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5"
+                >
+                  <ArrowDownLeft className="w-4 h-4" />
+                  Pengeluaran Lain
+                </button>
+              </div>
+            </div>
+
+            {/* FILTER & DATA TRANSAKSI KAS */}
+            <div className="bg-white rounded-3xl p-4 border border-slate-100 shadow-sm space-y-4">
+              <div className="flex flex-col gap-2 border-b border-slate-100 pb-3">
+                <h4 className="font-bold text-slate-800 text-sm">Alur Mutasi Kas</h4>
+                
+                {/* PILIHAN FILTER PERIODE WAKTU (HARI, MINGGU, BULAN, SEMUA) */}
+                <div className="grid grid-cols-4 gap-1.5 bg-slate-50 p-1 rounded-xl">
+                  {[
+                    { key: 'ALL', label: 'Semua' },
+                    { key: 'TODAY', label: 'Hari Ini' },
+                    { key: 'WEEK', label: 'Minggu' },
+                    { key: 'MONTH', label: 'Bulan' }
+                  ].map((p) => (
+                    <button
+                      key={p.key}
+                      onClick={() => setFinancePeriodFilter(p.key)}
+                      className={`py-1.5 rounded-lg text-[10px] font-bold transition-all text-center ${
+                        financePeriodFilter === p.key 
+                          ? 'bg-emerald-600 text-white shadow-sm' 
+                          : 'text-slate-500 hover:bg-slate-100'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* FILTER KATEGORI KAS */}
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-bold text-slate-500">Tipe Kas:</span>
+                <div className="flex gap-1.5">
+                  {['ALL', 'INCOME', 'EXPENSE'].map((fType) => (
+                    <button
+                      key={fType}
+                      onClick={() => setFinanceFilterType(fType)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${
+                        financeFilterType === fType 
+                          ? 'bg-slate-800 text-white border-slate-800' 
+                          : 'bg-slate-50 text-slate-500 border-slate-200'
+                      }`}
+                    >
+                      {fType === 'ALL' ? 'Semua' : fType === 'INCOME' ? 'Masuk' : 'Keluar'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* FILTER TANGGAL MANUAl */}
+              <div className="grid grid-cols-1 gap-2">
+                <input 
+                  type="date" 
+                  value={filterDate}
+                  onChange={(e) => setFilterDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+                {filterDate && (
+                  <button 
+                    onClick={() => setFilterDate('')}
+                    className="text-[10px] text-red-500 font-semibold text-right"
+                  >
+                    Hapus Filter Tanggal
+                  </button>
+                )}
+              </div>
+
+              {/* DAFTAR MUTASI KEUANGAN (DENGAN TOGGLE LIHAT SEMUA) */}
+              <div className={`space-y-2.5 overflow-y-auto ${showAllFinances ? 'max-h-none' : 'max-h-72'}`}>
+                {filteredFinances.map((f) => (
+                  <div key={f.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs">
+                    <div className="space-y-0.5">
+                      <span className="font-bold text-slate-800 block text-[11px]">{f.category}</span>
+                      <span className="text-[10px] text-slate-500 block truncate max-w-[200px]">{f.notes}</span>
+                      <span className="text-[9px] text-slate-400 block">{formatDateFriendly(f.date)}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className={`font-extrabold text-sm ${f.type === 'INCOME' ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {f.type === 'INCOME' ? '+' : '-'}{formatRupiah(f.amount)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+
+                {filteredFinances.length === 0 && (
+                  <div className="text-center py-8 text-xs text-slate-400 italic">Belum ada catatan mutasi kas</div>
+                )}
+              </div>
+
+              {/* TOMBOL TOGGLE LIHAT SEMUA ARUS ALIRAN KAS */}
+              {filteredFinances.length > 0 && (
+                <button
+                  onClick={() => setShowAllFinances(!showAllFinances)}
+                  className="w-full text-center py-2.5 text-xs text-emerald-600 font-bold border-t border-slate-100 hover:underline flex items-center justify-center gap-1.5"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  {showAllFinances ? 'Sembunyikan / Sempitkan Arus Kas' : 'Lihat Semua Arus Aliran Kas'}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ================= PAGE: RIWAYAT TRANSAKSI ================= */}
+        {activeTab === 'riwayat' && (
+          <div className="space-y-4">
+            {/* SEARCH BAR & CARDS */}
+            <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm space-y-3">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input 
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder="Cari transaksi berdasarkan nama pembeli / Kode TX..."
+                />
+              </div>
+
+              <div className="flex justify-between items-center text-xs text-slate-500">
+                <span>Ditemukan {filteredTransactions.length} transaksi</span>
+                {searchTerm && (
+                  <button onClick={() => setSearchTerm('')} className="text-emerald-600 font-bold hover:underline">
+                    Reset Pencarian
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* DAFTAR TRANSAKSI DETAIL */}
+            <div className="space-y-3">
+              {filteredTransactions.map((tx) => (
+                <div 
+                  key={tx.id} 
+                  className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden"
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[9px] font-bold">
+                        {tx.id}
+                      </span>
+                      <h4 className="font-extrabold text-slate-800 text-sm mt-1">{tx.customerName}</h4>
+                      <p className="text-[10px] text-slate-400">{formatDateFriendly(tx.date)}</p>
+                    </div>
+
+                    <div className="text-right">
+                      <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full">
+                        {tx.type}
+                      </span>
+                      <span className="block font-black text-slate-800 text-base mt-1.5">{formatRupiah(tx.total)}</span>
+                      <span className="text-[10px] text-slate-500 block">{tx.qty} Tabung × {formatRupiah(tx.pricePerUnit)}</span>
+                    </div>
+                  </div>
+
+                  {/* Catatan / Notes di Riwayat Transaksi */}
+                  {tx.notes && (
+                    <div className="mt-2.5 p-2 bg-amber-50/50 rounded-lg text-[10px] text-slate-500 italic border border-amber-100/50">
+                      Notes: "{tx.notes}"
+                    </div>
+                  )}
+
+                  <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center">
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-medium">
+                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
+                      Bayar: {tx.paymentMethod}
+                    </div>
+
+                    {/* GRUP AKSI */}
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => setReceiptTx(tx)}
+                        className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg"
+                        title="Struk Belanja"
+                      >
+                        <FileText className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => openEditTxModal(tx)}
+                        className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-lg"
+                        title="Edit Data"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => {
+                          if (window.confirm(`Yakin ingin membatalkan & menghapus transaksi ${tx.id}?\n\nSemua perubahan stok dan saldo akan dikembalikan otomatis secara real-time.`)) {
+                            handleDeleteTransaction(tx.id);
+                          }
+                        }}
+                        className="p-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg"
+                        title="Hapus / Void"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {filteredTransactions.length === 0 && (
+                <div className="text-center py-12 bg-white rounded-3xl border border-slate-100">
+                  <Package className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+                  <p className="text-xs text-slate-400">Tidak ada data transaksi yang cocok.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ================= PAGE: PENGATURAN TOKO ================= */}
+        {activeTab === 'pengaturan' && (
+          <div className="space-y-4">
+            {/* PENGATURAN HARGA DEFAULT */}
+            <div className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm">
+              <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+                <Settings className="w-5 h-5 text-emerald-600" />
+                <h3 className="font-bold text-slate-800 text-sm">Konfigurasi Harga Jual Default</h3>
+              </div>
+
+              <form onSubmit={handleSaveSettings} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                    Harga Jual Satuan (IDR)
+                  </label>
+                  <input 
+                    type="number"
+                    value={settings.priceSatuan}
+                    onChange={(e) => setSettings({...settings, priceSatuan: parseFloat(e.target.value) || 0})}
+                    className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:ring-emerald-500 focus:ring-2 focus:outline-none font-bold text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                    Harga Jual Eceran Dikirim (IDR)
+                  </label>
+                  <input 
+                    type="number"
+                    value={settings.priceEceranDikirim}
+                    onChange={(e) => setSettings({...settings, priceEceranDikirim: parseFloat(e.target.value) || 0})}
+                    className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:ring-emerald-500 focus:ring-2 focus:outline-none font-bold text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                    Harga Jual Eceran Diambil (IDR)
+                  </label>
+                  <input 
+                    type="number"
+                    value={settings.priceEceranDiambil}
+                    onChange={(e) => setSettings({...settings, priceEceranDiambil: parseFloat(e.target.value) || 0})}
+                    className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:ring-emerald-500 focus:ring-2 focus:outline-none font-bold text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                    Batas Minimum Alarm Stok (Pcs)
+                  </label>
+                  <input 
+                    type="number"
+                    value={settings.minStockAlert}
+                    onChange={(e) => setSettings({...settings, minStockAlert: parseInt(e.target.value) || 0})}
+                    className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:ring-emerald-500 focus:ring-2 focus:outline-none font-bold text-sm"
+                  />
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    className="w-full bg-slate-800 text-white font-bold py-3 px-4 rounded-xl shadow-lg hover:bg-slate-900 active:scale-95 transition-all text-xs"
+                  >
+                    Simpan Perubahan Harga
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* DATA PROFIL TOKO */}
+            <div className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm space-y-4">
+              <div className="flex items-center gap-2 mb-2 border-b border-slate-100 pb-3">
+                <Info className="w-5 h-5 text-emerald-600" />
+                <h3 className="font-bold text-slate-800 text-sm">Informasi Pangkalan</h3>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Nama Bisnis</label>
+                  <input 
+                    type="text" 
+                    value={settings.storeName}
+                    onChange={(e) => setSettings({...settings, storeName: e.target.value})}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Pemilik</label>
+                  <input 
+                    type="text" 
+                    value={settings.ownerName}
+                    onChange={(e) => setSettings({...settings, ownerName: e.target.value})}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Alamat Fisik</label>
+                  <input 
+                    type="text" 
+                    value={settings.address}
+                    onChange={(e) => setSettings({...settings, address: e.target.value})}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div className="bg-slate-50 p-3.5 rounded-xl text-[11px] text-slate-500 border border-slate-100">
+                Pangkalan Ida Rosida adalah penyalur resmi LPG bersubsidi 3Kg daerah Soreang Jawa Barat. Seluruh catatan tersimpan aman pada memory peramban (LocalStorage) perangkat ini.
+              </div>
+            </div>
+          </div>
+        )}
+
+      </main>
+
+      {/* ================= MODAL: INPUT STOK BARU ================= */}
+      {isStockModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-end justify-center">
+          <div className="bg-white rounded-t-[32px] w-full max-w-md p-6 space-y-4 animate-slide-up shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="font-bold text-slate-800 text-base">Atur Pasokan Baru (SPBE)</h3>
+              <button onClick={() => setIsStockModalOpen(false)} className="p-1.5 bg-slate-100 rounded-full text-slate-500">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveStock} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Jenis Pasokan</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setStockForm({...stockForm, type: 'IN_ISI'})}
+                    className={`py-3 px-2 rounded-xl text-xs font-bold border transition-colors ${
+                      stockForm.type === 'IN_ISI' 
+                        ? 'bg-emerald-600 border-emerald-600 text-white' 
+                        : 'bg-slate-50 border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    Gas Isi Baru Masuk
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStockForm({...stockForm, type: 'IN_KOSONG'})}
+                    className={`py-3 px-2 rounded-xl text-xs font-bold border transition-colors ${
+                      stockForm.type === 'IN_KOSONG' 
+                        ? 'bg-amber-600 border-amber-600 text-white' 
+                        : 'bg-slate-50 border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    Beli Tabung Kosong Baru
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Jumlah (Pcs / Tabung)</label>
+                <input 
+                  type="number"
+                  value={stockForm.qty}
+                  onChange={(e) => setStockForm({...stockForm, qty: Math.max(1, parseInt(e.target.value) || 1)})}
+                  className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 font-bold"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Asal Pengirim / Supplier</label>
+                <input 
+                  type="text"
+                  value={stockForm.supplier}
+                  onChange={(e) => setStockForm({...stockForm, supplier: e.target.value})}
+                  className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Keterangan Ringkas</label>
+                <input 
+                  type="text"
+                  value={stockForm.notes}
+                  onChange={(e) => setStockForm({...stockForm, notes: e.target.value})}
+                  className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-xs"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-emerald-600 text-white font-bold py-3.5 rounded-xl shadow-lg hover:bg-emerald-700 transition-colors"
+              >
+                Konfirmasi Tambah Stok
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: INPUT KEUANGAN BEBAS ================= */}
+      {isFinanceModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-end justify-center">
+          <div className="bg-white rounded-t-[32px] w-full max-w-md p-6 space-y-4 animate-slide-up shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="font-bold text-slate-800 text-base">
+                Catat Keuangan ({financeForm.type === 'INCOME' ? 'Masuk' : 'Keluar'})
+              </h3>
+              <button onClick={() => setIsFinanceModalOpen(false)} className="p-1.5 bg-slate-100 rounded-full text-slate-500">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveFinance} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Kategori Transaksi</label>
+                <input 
+                  type="text"
+                  value={financeForm.category}
+                  onChange={(e) => setFinanceForm({...financeForm, category: e.target.value})}
+                  className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold"
+                  placeholder="Misal: Biaya Listrik, Ongkos Kirim, Konsumsi Harian"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Nominal Kas (Rupiah)</label>
+                <input 
+                  type="number"
+                  value={financeForm.amount}
+                  onChange={(e) => setFinanceForm({...financeForm, amount: e.target.value})}
+                  className="w-full px-4 py-3.5 rounded-xl bg-slate-50 border border-slate-200 font-extrabold text-slate-800 text-lg"
+                  placeholder="IDR 0"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Keterangan / Detil</label>
+                <textarea 
+                  value={financeForm.notes}
+                  onChange={(e) => setFinanceForm({...financeForm, notes: e.target.value})}
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs"
+                  placeholder="Rincian catatan pengeluaran/pemasukan..."
+                  rows="3"
+                ></textarea>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-slate-800 text-white font-bold py-3.5 rounded-xl shadow-lg hover:bg-slate-950 transition-colors"
+              >
+                Simpan Transaksi Kas
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: STRUK BELANJA MODERN ================= */}
+      {receiptTx && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-5 space-y-4 shadow-2xl relative overflow-hidden">
+            {/* Border melingkar dekorasi karcis */}
+            <div className="absolute top-1/2 left-0 w-4 h-8 bg-slate-900/70 rounded-r-full -translate-y-1/2"></div>
+            <div className="absolute top-1/2 right-0 w-4 h-8 bg-slate-900/70 rounded-l-full -translate-y-1/2"></div>
+
+            <div className="text-center border-b-2 border-dashed border-slate-200 pb-4">
+              <h3 className="font-extrabold text-slate-800 text-base uppercase">{settings.storeName}</h3>
+              <p className="text-[10px] text-slate-500">{settings.address}</p>
+              <p className="text-[10px] text-slate-400 mt-1">WA: 0812-3456-7890</p>
+            </div>
+
+            <div className="space-y-2 text-xs text-slate-600">
+              <div className="flex justify-between">
+                <span>Nota Nomor:</span>
+                <span className="font-bold text-slate-800">{receiptTx.id}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Tanggal Jual:</span>
+                <span>{formatDateFriendly(receiptTx.date)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Nama Pembeli:</span>
+                <span className="font-bold text-slate-800">{receiptTx.customerName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Metode Bayar:</span>
+                <span className="font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
+                  {receiptTx.paymentMethod}
+                </span>
+              </div>
+            </div>
+
+            <div className="border-t-2 border-dashed border-slate-200 pt-3">
+              <div className="flex justify-between text-xs text-slate-600 font-semibold mb-1">
+                <span>Produk / Layanan</span>
+                <span>Subtotal</span>
+              </div>
+              <div className="flex justify-between text-xs text-slate-800 font-bold">
+                <span>{receiptTx.qty} × Gas LPG 3Kg ({receiptTx.type})</span>
+                <span>{formatRupiah(receiptTx.total)}</span>
+              </div>
+            </div>
+
+            <div className="bg-emerald-50 p-3 rounded-2xl flex justify-between items-center mt-2">
+              <span className="text-xs font-bold text-emerald-800">TOTAL AKHIR</span>
+              <span className="text-lg font-black text-emerald-700">{formatRupiah(receiptTx.total)}</span>
+            </div>
+
+            {receiptTx.notes && (
+              <div className="p-2.5 bg-slate-50 rounded-lg text-[10px] text-slate-400 italic">
+                * Note: {receiptTx.notes}
+              </div>
+            )}
+
+            <div className="text-center pt-3 border-t border-slate-100">
+              <p className="text-[10px] text-emerald-600 font-extrabold tracking-wide">TERIMA KASIH - BELANJA LAGI DI KAMI</p>
+              <p className="text-[9px] text-slate-400 mt-0.5">Gas Aman, Keluarga Nyaman</p>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button 
+                onClick={() => {
+                  window.print();
+                }}
+                className="flex-1 bg-emerald-600 text-white font-bold py-3 px-4 rounded-xl text-xs hover:bg-emerald-700 active:scale-95 transition-all"
+              >
+                Cetak Struk (PDF)
+              </button>
+              <button 
+                onClick={() => setReceiptTx(null)}
+                className="bg-slate-100 text-slate-700 font-semibold py-3 px-4 rounded-xl text-xs hover:bg-slate-200"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= BOTTOM NAVIGATION (STICKY BAR) ================= */}
+      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white border-t border-slate-100 px-2 py-2 flex justify-around items-center z-40 shadow-inner">
+        <button 
+          onClick={() => setActiveTab('dashboard')}
+          className={`flex flex-col items-center justify-center p-2.5 rounded-2xl transition-all ${
+            activeTab === 'dashboard' ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400'
+          }`}
+        >
+          <Home className="w-5 h-5" />
+          <span className="text-[10px] font-bold mt-1">Utama</span>
+        </button>
+
+        <button 
+          onClick={() => setActiveTab('transaksi')}
+          className={`flex flex-col items-center justify-center p-2.5 rounded-2xl transition-all ${
+            activeTab === 'transaksi' ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400'
+          }`}
+        >
+          <Plus className="w-5 h-5" />
+          <span className="text-[10px] font-bold mt-1">Kasir</span>
+        </button>
+
+        <button 
+          onClick={() => setActiveTab('stok')}
+          className={`flex flex-col items-center justify-center p-2.5 rounded-2xl transition-all ${
+            activeTab === 'stok' ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400'
+          }`}
+        >
+          <Package className="w-5 h-5" />
+          <span className="text-[10px] font-bold mt-1">Stok</span>
+        </button>
+
+        <button 
+          onClick={() => setActiveTab('keuangan')}
+          className={`flex flex-col items-center justify-center p-2.5 rounded-2xl transition-all ${
+            activeTab === 'keuangan' ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400'
+          }`}
+        >
+          <DollarSign className="w-5 h-5" />
+          <span className="text-[10px] font-bold mt-1">Kas</span>
+        </button>
+
+        <button 
+          onClick={() => setActiveTab('riwayat')}
+          className={`flex flex-col items-center justify-center p-2.5 rounded-2xl transition-all ${
+            activeTab === 'riwayat' ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400'
+          }`}
+        >
+          <History className="w-5 h-5" />
+          <span className="text-[10px] font-bold mt-1">Riwayat</span>
+        </button>
+
+        <button 
+          onClick={() => setActiveTab('pengaturan')}
+          className={`flex flex-col items-center justify-center p-2.5 rounded-2xl transition-all ${
+            activeTab === 'pengaturan' ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400'
+          }`}
+        >
+          <Settings className="w-5 h-5" />
+          <span className="text-[10px] font-bold mt-1">Atur</span>
+        </button>
+      </div>
+
+      {/* FLOATING ACTION BUTTON UNTUK TRANSAKSI CEPAT (Hanya terlihat di Dashboard & Riwayat) */}
+      {(activeTab === 'dashboard' || activeTab === 'riwayat') && (
+        <button
+          onClick={() => {
+            setIsEditingTx(false);
+            setTxForm({
+              customerName: '',
+              type: 'Satuan',
+              pricePerUnit: settings.priceSatuan,
+              qty: 1,
+              paymentMethod: 'Tunai',
+              customPayment: '',
+              notes: ''
+            });
+            setActiveTab('transaksi');
+          }}
+          className="fixed bottom-20 right-4 md:right-[calc(50vw-220px)] bg-emerald-600 hover:bg-emerald-700 text-white p-4 rounded-full shadow-2xl active:scale-90 transition-transform z-40 flex items-center justify-center"
+          title="Transaksi Baru"
+        >
+          <Plus className="w-6 h-6 stroke-[3]" />
+        </button>
+      )}
+    </div>
+  );
+}
